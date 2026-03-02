@@ -352,6 +352,11 @@ class Scheduler(SchedulerInterface):
         # For logging.
         scheduled_timestamp = time.monotonic()
 
+        print(
+            f'Schedule start waiting={len(self.waiting)} '
+            f'running={len(self.running)} token_budget={token_budget}'
+        )
+
         self.kv_cache_manager.new_step_starts()
 
         # First, schedule the RUNNING requests.
@@ -372,6 +377,10 @@ class Scheduler(SchedulerInterface):
                 # Async scheduling: Avoid scheduling an extra step when we are sure that
                 # the previous step has reached request.max_tokens. We don't schedule
                 # partial draft tokens since this prevents uniform decode optimizations.
+                print(
+                    f'Skipping running request {request.request_id} because '
+                    'async scheduling already reached max tokens'
+                )
                 req_index += 1
                 continue
 
@@ -428,12 +437,20 @@ class Scheduler(SchedulerInterface):
                 # NOTE(woosuk): Here, by doing `continue` instead of `break`,
                 # we do not strictly follow the FCFS scheduling policy and
                 # allow the lower-priority requests to be scheduled.
+                print(
+                    f'Skipping running request {request.request_id} because '
+                    'no schedulable tokens remain after budget or encoder checks'
+                )
                 req_index += 1
                 continue
 
             # Schedule newly needed KV blocks for the request.
             with record_function_or_nullcontext("schedule: allocate_slots"):
-                print(f'Trying to allocate for {num_new_tokens + self.num_lookahead_tokens} for request {request_id}')
+                print(
+                    f'Trying to allocate for '
+                    f'{num_new_tokens + self.num_lookahead_tokens} '
+                    f'for running request {request.request_id}'
+                )
                 while True:
                     new_blocks = self.kv_cache_manager.allocate_slots(
                         request,
@@ -443,10 +460,17 @@ class Scheduler(SchedulerInterface):
 
                     if new_blocks is not None:
                         # The request can be scheduled.
+                        print(
+                            f'Allocated running request {request.request_id}'
+                        )
                         break
 
                     # The request cannot be scheduled.
                     # Preempt the lowest-priority request.
+                    print(
+                        f'Allocation failed for running request '
+                        f'{request.request_id}, looking for preemption'
+                    )
                     if self.policy == SchedulingPolicy.PRIORITY:
                         preempted_req = max(
                             self.running,
@@ -471,18 +495,28 @@ class Scheduler(SchedulerInterface):
                                 )
                                 encoder_compute_budget += num_embeds_to_restore
                             req_index -= 1
+                        preempted_req_id = preempted_req.request_id
                     else:
                         preempted_req = self.running.pop()
-                    
+                        preempted_req_id = preempted_req.request_id
+
                     print(f'Preempted request {preempted_req_id}')
                     self._preempt_request(preempted_req, scheduled_timestamp)
                     preempted_reqs.append(preempted_req)
                     if preempted_req == request:
                         # No more request to preempt. Cannot schedule this request.
+                        print(
+                            f'Running request {request.request_id} could not be '
+                            'scheduled after preemption'
+                        )
                         break
 
             if new_blocks is None:
                 # Cannot schedule this request.
+                print(
+                    f'Stopping running scheduling because request '
+                    f'{request.request_id} could not allocate blocks'
+                )
                 break
 
             # Schedule the request.
@@ -543,10 +577,17 @@ class Scheduler(SchedulerInterface):
 
             while self.waiting and token_budget > 0:
                 if len(self.running) == self.max_num_running_reqs:
+                    print(
+                        'Stopping waiting scheduling because running queue is full'
+                    )
                     break
 
                 request = self.waiting.peek_request()
                 request_id = request.request_id
+                print(
+                    f'Considering waiting request {request_id} '
+                    f'status={request.status.name} token_budget={token_budget}'
+                )
 
                 # KVTransfer: skip request if still waiting for remote kvs.
                 if request.status == RequestStatus.WAITING_FOR_REMOTE_KVS:
@@ -563,6 +604,10 @@ class Scheduler(SchedulerInterface):
                             "%s is still in WAITING_FOR_REMOTE_KVS state.",
                             request_id,
                         )
+                        print(
+                            f'Skipping waiting request {request_id} because '
+                            'remote kvs are not ready'
+                        )
                         self.waiting.pop_request()
                         skipped_waiting_requests.prepend_request(request)
                         continue
@@ -574,6 +619,10 @@ class Scheduler(SchedulerInterface):
                     if structured_output_req and structured_output_req.grammar:
                         request.status = RequestStatus.WAITING
                     else:
+                        print(
+                            f'Skipping waiting request {request_id} because '
+                            'structured output grammar is not ready'
+                        )
                         self.waiting.pop_request()
                         skipped_waiting_requests.prepend_request(request)
                         continue
@@ -581,6 +630,10 @@ class Scheduler(SchedulerInterface):
                 # Streaming: skip request if still waiting for next streaming req.
                 if request.status == RequestStatus.WAITING_FOR_STREAMING_REQ:
                     assert not request.streaming_queue
+                    print(
+                        f'Skipping waiting request {request_id} because '
+                        'streaming input is not ready'
+                    )
                     self.waiting.pop_request()
                     skipped_waiting_requests.prepend_request(request)
                     continue
@@ -596,6 +649,10 @@ class Scheduler(SchedulerInterface):
                     )
                 ):
                     # Scheduling would exceed max_loras, skip.
+                    print(
+                        f'Skipping waiting request {request_id} because '
+                        'lora capacity is full'
+                    )
                     self.waiting.pop_request()
                     skipped_waiting_requests.prepend_request(request)
                     continue
@@ -623,6 +680,10 @@ class Scheduler(SchedulerInterface):
                             # The request cannot be scheduled because
                             # the KVConnector couldn't determine
                             # the number of matched tokens.
+                            print(
+                                f'Skipping waiting request {request_id} because '
+                                'connector could not determine matched tokens'
+                            )
                             self.waiting.pop_request()
                             skipped_waiting_requests.prepend_request(request)
                             continue
@@ -672,6 +733,11 @@ class Scheduler(SchedulerInterface):
                     ):
                         # If chunked_prefill is disabled,
                         # we can stop the scheduling here.
+                        print(
+                            f'Stopping waiting scheduling at request '
+                            f'{request_id} because chunked prefill is disabled '
+                            'and request exceeds token budget'
+                        )
                         break
 
                     num_new_tokens = min(num_new_tokens, token_budget)
@@ -693,6 +759,11 @@ class Scheduler(SchedulerInterface):
                         )
                         if num_new_tokens == 0:
                             # The request cannot be scheduled.
+                            print(
+                                f'Stopping waiting scheduling at request '
+                                f'{request_id} because encoder inputs '
+                                'cannot be scheduled'
+                            )
                             break
 
                 if self.need_mamba_block_aligned_split:
@@ -703,6 +774,11 @@ class Scheduler(SchedulerInterface):
                         num_external_computed_tokens,
                     )
                     if num_new_tokens == 0:
+                        print(
+                            f'Stopping waiting scheduling at request '
+                            f'{request_id} because block-aligned mamba split '
+                            'left no schedulable tokens'
+                        )
                         break
 
                 # Handles an edge case when P/D Disaggregation
@@ -739,6 +815,10 @@ class Scheduler(SchedulerInterface):
 
                 if new_blocks is None:
                     # The request cannot be scheduled.
+                    print(
+                        f'Stopping waiting scheduling at request {request_id} '
+                        'because kv allocation failed'
+                    )
 
                     # NOTE: we need to untouch the request from the encode cache
                     # manager
@@ -772,6 +852,10 @@ class Scheduler(SchedulerInterface):
                 if load_kv_async:
                     # If loading async, allocate memory and put request
                     # into the WAITING_FOR_REMOTE_KV state.
+                    print(
+                        f'Waiting request {request_id} is loading remote kv '
+                        'asynchronously'
+                    )
                     skipped_waiting_requests.prepend_request(request)
                     request.status = RequestStatus.WAITING_FOR_REMOTE_KVS
                     continue
@@ -787,6 +871,13 @@ class Scheduler(SchedulerInterface):
                     scheduled_resumed_reqs.append(request)
                 else:
                     raise RuntimeError(f"Invalid request status: {request.status}")
+
+                print(
+                    f'Scheduled waiting request {request_id} '
+                    f'as {request.status.name.lower()} '
+                    f'num_new_tokens={num_new_tokens} '
+                    f'num_computed_tokens={num_computed_tokens}'
+                )
 
                 if self.lora_config and request.lora_request:
                     scheduled_loras.add(request.lora_request.lora_int_id)
@@ -816,6 +907,10 @@ class Scheduler(SchedulerInterface):
 
             # Put back any skipped requests at the head of the waiting queue
             if skipped_waiting_requests:
+                print(
+                    f'Requeued skipped waiting requests count='
+                    f'{len(skipped_waiting_requests)}'
+                )
                 self.waiting.prepend_requests(skipped_waiting_requests)
 
         # Check if the scheduling constraints are satisfied.
@@ -910,6 +1005,12 @@ class Scheduler(SchedulerInterface):
 
         with record_function_or_nullcontext("schedule: update_after_schedule"):
             self._update_after_schedule(scheduler_output)
+        print(
+            f'Schedule end scheduled={len(num_scheduled_tokens)} '
+            f'preempted={len(preempted_reqs)} waiting={len(self.waiting)} '
+            f'running={len(self.running)} '
+            f'total_num_scheduled_tokens={total_num_scheduled_tokens}'
+        )
         return scheduler_output
 
     def _preempt_request(self, request: Request, timestamp: float) -> None:
@@ -928,6 +1029,10 @@ class Scheduler(SchedulerInterface):
         if request.spec_token_ids:
             request.spec_token_ids = []
         request.num_preemptions += 1
+        print(
+            f'Preempting request {request.request_id} '
+            f'num_preemptions={request.num_preemptions}'
+        )
         if self.log_stats:
             request.record_event(EngineCoreEventType.PREEMPTED, timestamp)
 

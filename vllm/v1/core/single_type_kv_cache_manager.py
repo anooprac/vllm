@@ -202,12 +202,23 @@ class SingleTypeKVCacheManager(ABC):
         # have a block_hash set.
         self.num_cached_block[request_id] = len(req_blocks)
 
+        print(
+            f'Added computed KV cache blocks for request {request_id} '
+            f'cached_blocks={len(new_computed_blocks)} '
+            f'skipped_blocks={num_skipped_blocks} '
+            f'external_tokens={num_external_computed_tokens}'
+        )
+
         if num_external_computed_tokens > 0:
             # Allocate new blocks for external computed tokens.
             allocated_blocks = self.block_pool.get_new_blocks(
                 cdiv(num_total_computed_tokens, self.block_size) - len(req_blocks)
             )
             req_blocks.extend(allocated_blocks)
+            print(
+                f'Allocated external KV cache blocks for request {request_id} '
+                f'count={len(allocated_blocks)}'
+            )
 
     def allocate_new_blocks(
         self, request_id: str, num_tokens: int, num_tokens_main_model: int
@@ -230,10 +241,18 @@ class SingleTypeKVCacheManager(ABC):
         num_required_blocks = cdiv(num_tokens, self.block_size)
         num_new_blocks = num_required_blocks - len(req_blocks)
         if num_new_blocks <= 0:
+            print(
+                f'No new KV cache blocks needed for request {request_id} '
+                f'num_tokens={num_tokens}'
+            )
             return []
         else:
             new_blocks = self.block_pool.get_new_blocks(num_new_blocks)
             req_blocks.extend(new_blocks)
+            print(
+                f'Allocated KV cache blocks for request {request_id} '
+                f'count={len(new_blocks)} total_blocks={len(req_blocks)}'
+            )
             return new_blocks
 
     def cache_blocks(self, request: Request, num_tokens: int) -> None:
@@ -274,9 +293,11 @@ class SingleTypeKVCacheManager(ABC):
 
         # Free blocks in reverse order so that the tail blocks are
         # freed first.
-        ordered_blocks = reversed(req_blocks)
-
-        print(f'Freed KV cache blocks size {len(list(ordered_blocks))}')
+        ordered_blocks = list(reversed(req_blocks))
+        print(
+            f'Freed KV cache blocks for request {request_id} '
+            f'size={len(ordered_blocks)}'
+        )
         self.block_pool.free_blocks(ordered_blocks)
         self.num_cached_block.pop(request_id, None)
 
