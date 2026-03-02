@@ -71,6 +71,7 @@ class Scheduler(SchedulerInterface):
         include_finished_set: bool = False,
         log_stats: bool = False,
     ) -> None:
+        self.scheduler_cycle_count = 0
         self.vllm_config = vllm_config
         self.scheduler_config = vllm_config.scheduler_config
         self.cache_config = vllm_config.cache_config
@@ -330,7 +331,8 @@ class Scheduler(SchedulerInterface):
         # num_tokens_with_spec. This is general enough to cover
         # chunked prefills, prefix caching, speculative decoding,
         # and the "jump decoding" optimization in the future.
-
+        print(f'In scheuling cycle {self.scheduler_cycle_count}')
+        self.scheduler_cycle_count += 1
         scheduled_new_reqs: list[Request] = []
         scheduled_resumed_reqs: list[Request] = []
         scheduled_running_reqs: list[Request] = []
@@ -361,6 +363,7 @@ class Scheduler(SchedulerInterface):
 
         # First, schedule the RUNNING requests.
         req_index = 0
+        print(f'There are {len(self.running)} events in running queue')
         while req_index < len(self.running) and token_budget > 0:
             request = self.running[req_index]
 
@@ -448,7 +451,7 @@ class Scheduler(SchedulerInterface):
             with record_function_or_nullcontext("schedule: allocate_slots"):
                 print(
                     f'Trying to allocate for '
-                    f'{num_new_tokens + self.num_lookahead_tokens} '
+                    f'{num_new_tokens + self.num_lookahead_tokens} tokens '
                     f'for running request {request.request_id}'
                 )
                 while True:
@@ -461,7 +464,7 @@ class Scheduler(SchedulerInterface):
                     if new_blocks is not None:
                         # The request can be scheduled.
                         print(
-                            f'Allocated running request {request.request_id}'
+                            f'Allocated blocks for running request {request.request_id}'
                         )
                         break
 
@@ -520,7 +523,7 @@ class Scheduler(SchedulerInterface):
                 break
 
             # Schedule the request.
-            print(f'Scheduled {request.request_id}')
+            print(f'Scheduled {request.request_id} to run in batch')
             scheduled_running_reqs.append(request)
             request_id = request.request_id
             req_to_new_blocks[request_id] = new_blocks
@@ -574,7 +577,8 @@ class Scheduler(SchedulerInterface):
             # Use a temporary RequestQueue to collect requests that need to be
             # skipped and put back at the head of the waiting queue later
             skipped_waiting_requests = create_request_queue(self.policy)
-
+            
+            print(f'There are {len(self.waiting)} events in waiting queue')
             while self.waiting and token_budget > 0:
                 if len(self.running) == self.max_num_running_reqs:
                     print(
@@ -875,6 +879,7 @@ class Scheduler(SchedulerInterface):
                 print(
                     f'Scheduled waiting request {request_id} '
                     f'as {request.status.name.lower()} '
+                    f'to runnning queue '
                     f'num_new_tokens={num_new_tokens} '
                     f'num_computed_tokens={num_computed_tokens}'
                 )
