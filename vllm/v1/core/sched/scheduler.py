@@ -433,6 +433,7 @@ class Scheduler(SchedulerInterface):
 
             # Schedule newly needed KV blocks for the request.
             with record_function_or_nullcontext("schedule: allocate_slots"):
+                print(f'Trying to allocate for {num_new_tokens + self.num_lookahead_tokens} for request {request_id}')
                 while True:
                     new_blocks = self.kv_cache_manager.allocate_slots(
                         request,
@@ -472,7 +473,8 @@ class Scheduler(SchedulerInterface):
                             req_index -= 1
                     else:
                         preempted_req = self.running.pop()
-
+                    
+                    print(f'Preempted request {preempted_req_id}')
                     self._preempt_request(preempted_req, scheduled_timestamp)
                     preempted_reqs.append(preempted_req)
                     if preempted_req == request:
@@ -484,6 +486,7 @@ class Scheduler(SchedulerInterface):
                 break
 
             # Schedule the request.
+            print(f'Scheduled {request.request_id}')
             scheduled_running_reqs.append(request)
             request_id = request.request_id
             req_to_new_blocks[request_id] = new_blocks

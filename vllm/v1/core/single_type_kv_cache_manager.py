@@ -276,6 +276,7 @@ class SingleTypeKVCacheManager(ABC):
         # freed first.
         ordered_blocks = reversed(req_blocks)
 
+        print(f'Freed KV cache blocks size {len(list(ordered_blocks))}')
         self.block_pool.free_blocks(ordered_blocks)
         self.num_cached_block.pop(request_id, None)
 
