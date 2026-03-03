@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import itertools
+import pdb
 import time
 from collections import defaultdict, deque
 from collections.abc import Iterable
@@ -1789,6 +1790,7 @@ class Scheduler(SchedulerInterface):
             if request.resumable:
                 request.streaming_queue = deque()
             self.waiting.add_request(request)
+            print(f'Added request {request.request_id}')
             self.requests[request.request_id] = request
             if self.log_stats:
                 request.record_event(EngineCoreEventType.QUEUED)

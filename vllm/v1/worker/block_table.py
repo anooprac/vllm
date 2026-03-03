@@ -191,6 +191,7 @@ class BlockTable:
             )
 
     def commit_block_table(self, num_reqs: int) -> None:
+        print(f'Commit block table num_reqs: {num_reqs}')
         self.block_table.copy_to_gpu(num_reqs)
 
     def commit_slot_mapping(self, num_tokens: int) -> None:

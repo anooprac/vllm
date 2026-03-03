@@ -130,6 +130,7 @@ class CpuGpuBuffer:
     def copy_to_gpu(self, n: int | None = None) -> torch.Tensor:
         if n is None:
             return self.gpu.copy_(self.cpu, non_blocking=True)
+        print(f'Copying to GPU {self.cpu[:n]}')
         return self.gpu[:n].copy_(self.cpu[:n], non_blocking=True)
 
     def copy_to_cpu(self, n: int | None = None) -> torch.Tensor:

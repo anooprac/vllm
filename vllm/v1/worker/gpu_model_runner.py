@@ -4,6 +4,7 @@
 import functools
 import gc
 import itertools
+import pdb
 import threading
 import time
 from collections import defaultdict
@@ -3446,6 +3447,8 @@ class GPUModelRunner(
             max_num_scheduled_tokens = int(num_scheduled_tokens_np.max())
             num_tokens_unpadded = scheduler_output.total_num_scheduled_tokens
 
+            print(f'Scheduler output: {scheduler_output.scheduled_new_reqs}')
+
             logits_indices, spec_decode_metadata = self._prepare_inputs(
                 scheduler_output,
                 num_scheduled_tokens_np,
@@ -5925,6 +5928,7 @@ class GPUModelRunner(
         # Try creating KV caches optimized for kv-connector transfers
         cache_dtype = self.cache_config.cache_dtype
         if self.use_uniform_kv_cache(self.attn_groups, cache_dtype):
+            print(f'ALLOCATE UNIFRM KV CACHES')
             kv_caches, cross_layers_kv_cache, attn_backend = (
                 self.allocate_uniform_kv_caches(
                     kv_cache_config,
@@ -6017,6 +6021,7 @@ class GPUModelRunner(
 
         # Reinitialize need to after initialize_attn_backend
         self.may_reinitialize_input_batch(kv_cache_config, kernel_block_sizes)
+        print("initialize kv cache tensors")
         kv_caches = self.initialize_kv_cache_tensors(
             kv_cache_config, kernel_block_sizes
         )
