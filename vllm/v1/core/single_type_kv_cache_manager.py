@@ -205,6 +205,7 @@ class SingleTypeKVCacheManager(ABC):
         print(
             f'Added computed KV cache blocks for request {request_id} '
             f'cached_blocks={len(new_computed_blocks)} '
+            f'cached_block_ids={[block.block_id for block in new_computed_blocks]} '
             f'skipped_blocks={num_skipped_blocks} '
             f'external_tokens={num_external_computed_tokens}'
         )
@@ -214,10 +215,17 @@ class SingleTypeKVCacheManager(ABC):
             allocated_blocks = self.block_pool.get_new_blocks(
                 cdiv(num_total_computed_tokens, self.block_size) - len(req_blocks)
             )
+            print(
+                f'Request id {request_id} previously had {len(req_blocks)} allocated '
+                f'block_size={self.block_size}'
+            )
             req_blocks.extend(allocated_blocks)
+            print(f'Request id {request_id} now has {len(req_blocks)} allocated')
+
             print(
                 f'Allocated external KV cache blocks for request {request_id} '
-                f'count={len(allocated_blocks)}'
+                f'count={len(allocated_blocks)} '
+                f'block_ids={[block.block_id for block in allocated_blocks]}'
             )
 
     def allocate_new_blocks(
@@ -243,15 +251,25 @@ class SingleTypeKVCacheManager(ABC):
         if num_new_blocks <= 0:
             print(
                 f'No new KV cache blocks needed for request {request_id} '
-                f'num_tokens={num_tokens}'
+                f'num_tokens={num_tokens} '
+                f'block_size={self.block_size} '
+                f'existing_blocks={len(req_blocks)}'
             )
             return []
         else:
             new_blocks = self.block_pool.get_new_blocks(num_new_blocks)
+            print(
+                f'Request id {request_id} previously had {len(req_blocks)} allocated '
+                f'block_size={self.block_size} '
+                f'num_required_blocks={num_required_blocks}'
+            )
             req_blocks.extend(new_blocks)
+            print(f'Request id {request_id} now has {len(req_blocks)} allocated')
             print(
                 f'Allocated KV cache blocks for request {request_id} '
-                f'count={len(new_blocks)} total_blocks={len(req_blocks)}'
+                f'count={len(new_blocks)} '
+                f'block_ids={[block.block_id for block in new_blocks]} '
+                f'total_blocks={len(req_blocks)}'
             )
             return new_blocks
 
@@ -296,7 +314,8 @@ class SingleTypeKVCacheManager(ABC):
         ordered_blocks = list(reversed(req_blocks))
         print(
             f'Freed KV cache blocks for request {request_id} '
-            f'size={len(ordered_blocks)}'
+            f'size={len(ordered_blocks)} '
+            f'block_ids={[block.block_id for block in ordered_blocks]}'
         )
         self.block_pool.free_blocks(ordered_blocks)
         self.num_cached_block.pop(request_id, None)

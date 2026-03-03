@@ -328,6 +328,10 @@ class BlockPool:
         Returns:
             A list of new block.
         """
+        print(
+            f'Getting {num_blocks} new blocks from block pool '
+            f'free_blocks_before={self.get_num_free_blocks()}'
+        )
         if num_blocks > self.get_num_free_blocks():
             raise ValueError(f"Cannot get {num_blocks} free blocks from the pool")
 
@@ -347,6 +351,10 @@ class BlockPool:
                 block.ref_cnt += 1
                 if self.metrics_collector:
                     self.metrics_collector.on_block_allocated(block)
+        print(
+            f'Allocated block ids {[block.block_id for block in ret]} '
+            f'free_blocks_after={self.get_num_free_blocks()}'
+        )
         return ret
 
     def _maybe_evict_cached_block(self, block: KVCacheBlock) -> bool:
@@ -397,6 +405,11 @@ class BlockPool:
         Args:
             blocks: A list of blocks to touch.
         """
+        if blocks:
+            print(
+                f'Touching cached block ids {[block.block_id for block in blocks]} '
+                f'free_blocks_before_touch={self.get_num_free_blocks()}'
+            )
         for block in blocks:
             # ref_cnt=0 means this block is in the free list (i.e. eviction
             # candidate), so remove it.
@@ -405,6 +418,11 @@ class BlockPool:
             block.ref_cnt += 1
             if self.metrics_collector:
                 self.metrics_collector.on_block_accessed(block)
+        if blocks:
+            print(
+                f'Touched cached block ids {[block.block_id for block in blocks]} '
+                f'free_blocks_after_touch={self.get_num_free_blocks()}'
+            )
 
     def free_blocks(self, ordered_blocks: Iterable[KVCacheBlock]) -> None:
         """Free a list of blocks. The blocks should be ordered by their
@@ -416,11 +434,21 @@ class BlockPool:
         """
         # Materialize the iterable to allow multiple passes.
         blocks_list = list(ordered_blocks)
+        if blocks_list:
+            print(
+                f'Freeing block ids {[block.block_id for block in blocks_list]} '
+                f'free_blocks_before_free={self.get_num_free_blocks()}'
+            )
         for block in blocks_list:
             block.ref_cnt -= 1
         self.free_block_queue.append_n(
             [block for block in blocks_list if block.ref_cnt == 0 and not block.is_null]
         )
+        if blocks_list:
+            print(
+                f'Freed block ids {[block.block_id for block in blocks_list if block.ref_cnt == 0 and not block.is_null]} '
+                f'free_blocks_after_free={self.get_num_free_blocks()}'
+            )
 
     def evict_blocks(self, block_ids: set[int]) -> None:
         """evict blocks from the prefix cache by their block IDs.

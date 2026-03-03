@@ -313,6 +313,18 @@ class KVCacheManager:
             self.max_model_len,
         )
 
+        print(
+            f'Allocating KV cache slots for request {request.request_id} '
+            f'computed_tokens={request.num_computed_tokens} '
+            f'new_tokens={num_new_tokens} '
+            f'new_computed_tokens={num_new_computed_tokens} '
+            f'external_computed_tokens={num_external_computed_tokens} '
+            f'lookahead_tokens={num_lookahead_tokens} '
+            f'encoder_tokens={num_encoder_tokens} '
+            f'total_computed_tokens={total_computed_tokens} '
+            f'num_tokens_need_slot={num_tokens_need_slot}'
+        )
+
         # Free the blocks that are skipped during the attention computation
         # (e.g., tokens outside the sliding window).
         # We can do this even if we cannot schedule this request due to
@@ -333,8 +345,18 @@ class KVCacheManager:
             num_tokens_main_model=num_tokens_main_model,
         )
 
+        print(
+            f'Request {request.request_id} needs {num_blocks_to_allocate} new blocks '
+            f'free_blocks_before_alloc={self.block_pool.get_num_free_blocks()}'
+        )
+
         if num_blocks_to_allocate > self.block_pool.get_num_free_blocks():
             # Cannot allocate new blocks
+            print(
+                f'KV cache allocation failed for request {request.request_id} '
+                f'requested_blocks={num_blocks_to_allocate} '
+                f'free_blocks={self.block_pool.get_num_free_blocks()}'
+            )
             return None
 
         if (
@@ -355,6 +377,12 @@ class KVCacheManager:
             num_tokens_need_slot,
             num_tokens_main_model,
             num_encoder_tokens,
+        )
+
+        print(
+            f'KV cache allocation finished for request {request.request_id} '
+            f'new_block_ids={self.create_kv_cache_blocks(new_blocks).get_block_ids(allow_none=True)} '
+            f'free_blocks_after_alloc={self.block_pool.get_num_free_blocks()}'
         )
 
         # P/D: delay caching blocks if we have to recv from

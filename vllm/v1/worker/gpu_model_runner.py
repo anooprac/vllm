@@ -760,6 +760,7 @@ class GPUModelRunner(
         self.mamba_state_idx: dict[str, int] = {}
         self._mamba_copy_bufs: mamba_utils.MambaCopyBuffers | None = None
         self.layerwise_nvtx_hooks_registered = False
+        print(f'GPU Model Runner initialized!')
 
     def update_max_model_len(self, max_model_len: int) -> None:
         self.max_model_len = max_model_len
